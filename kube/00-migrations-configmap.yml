@@ -1,0 +1,89 @@
+# Generated - do not hand-edit. Regenerate after changing migrations/*.sql:
+#   kubectl create configmap assigner-migrations --from-file=../migrations/ --dry-run=client -o yaml
+
+apiVersion: v1
+data:
+  001_create_tables.sql: |
+    -- A cohort of students, uploaded from a CSV.
+    CREATE TABLE IF NOT EXISTS cohorts (
+        id         SERIAL PRIMARY KEY,
+        label      TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS students (
+        id        SERIAL PRIMARY KEY,
+        cohort_id INT  NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+        name      TEXT NOT NULL,
+        usn       TEXT,
+        UNIQUE (cohort_id, usn)
+    );
+
+    -- One allocation of the whole cohort. The seed is stored so the run can be
+    -- reproduced later and defended if a student says they were singled out.
+    CREATE TABLE IF NOT EXISTS runs (
+        id         SERIAL PRIMARY KEY,
+        cohort_id  INT  NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+        seed       INT  NOT NULL,
+        pool       TEXT NOT NULL DEFAULT 'all',
+        batch_size INT  NOT NULL DEFAULT 5,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- ONE ROW PER STUDENT. There are no groups: a student is assigned a project
+    -- individually, so nobody can arrange themselves into a team to get an
+    -- easier one.
+    CREATE TABLE IF NOT EXISTS assignments (
+        id            SERIAL PRIMARY KEY,
+        run_id        INT  NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        student_id    INT  NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        position      INT  NOT NULL,
+        batch_no      INT  NOT NULL,
+        project_id    INT  NOT NULL,
+        project_title TEXT NOT NULL,
+        revealed      BOOLEAN NOT NULL DEFAULT FALSE,
+        revealed_at   TIMESTAMPTZ,
+        UNIQUE (run_id, student_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS students_cohort ON students (cohort_id);
+    CREATE INDEX IF NOT EXISTS assignments_batch ON assignments (run_id, batch_no, position);
+  002_seed.sql: |
+    -- A demo cohort so the app works the moment it starts, with no real names.
+    INSERT INTO cohorts (id, label) VALUES (1, 'Demo Cohort (examples)')
+    ON CONFLICT DO NOTHING;
+    SELECT setval('cohorts_id_seq', GREATEST((SELECT MAX(id) FROM cohorts), 1));
+
+    INSERT INTO students (cohort_id, name, usn)
+    SELECT 1, 'Example Student ' || lpad(g::text, 2, '0'), '00DEMO' || lpad(g::text, 3, '0')
+    FROM generate_series(1, 20) AS g
+    ON CONFLICT DO NOTHING;
+  003_schedule.sql: |
+    -- One viva/demo schedule for a cohort: every student gets one 10-minute
+    -- evening slot. The seed and the start date are stored so the schedule can
+    -- be reproduced later and defended if a student says they were singled out.
+    CREATE TABLE IF NOT EXISTS schedules (
+        id         SERIAL PRIMARY KEY,
+        cohort_id  INT  NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+        seed       INT  NOT NULL,
+        start_date DATE NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- ONE ROW PER STUDENT. Both UNIQUE constraints carry weight:
+    --   (schedule_id, student_id) - nobody is booked into two slots
+    --   (schedule_id, slot_at)    - two students are never in the same slot
+    CREATE TABLE IF NOT EXISTS meeting_slots (
+        id          SERIAL PRIMARY KEY,
+        schedule_id INT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+        student_id  INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        slot_at     TIMESTAMPTZ NOT NULL,
+        UNIQUE (schedule_id, student_id),
+        UNIQUE (schedule_id, slot_at)
+    );
+
+    CREATE INDEX IF NOT EXISTS schedules_cohort ON schedules (cohort_id);
+    CREATE INDEX IF NOT EXISTS meeting_slots_order ON meeting_slots (schedule_id, slot_at);
+kind: ConfigMap
+metadata:
+  name: assigner-migrations

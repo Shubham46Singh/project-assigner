@@ -1,0 +1,18 @@
+# One stable name and IP in front of the three replicas. Pods come and go and
+# their IPs change; this does not.
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-assigner
+spec:
+  type: NodePort
+  selector:
+    # Matches the Pod labels in 03-deployment.yml. A typo here is the classic
+    # silent failure: everything reports Running, nothing answers. The check
+    # is `kubectl get endpoints project-assigner` - empty means the selector
+    # matched nothing.
+    app: project-assigner
+  ports:
+    - port: 80          # the port the Service answers on, inside the cluster
+      targetPort: 8080  # the port the container actually listens on
+      nodePort: 30080   # the port opened on the node itself

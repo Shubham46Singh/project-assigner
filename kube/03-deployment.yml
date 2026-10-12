@@ -1,0 +1,41 @@
+# The app itself. Three replicas, so the Service in 04-service.yml has
+# something to load-balance across and so a deleted Pod visibly comes back.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-assigner
+spec:
+  replicas: 3
+  selector:
+    # This is the whole trick of a Deployment: it does not own a list of Pods,
+    # it owns a label. Anything matching app=project-assigner is "mine", and it
+    # keeps exactly `replicas` of them alive.
+    matchLabels:
+      app: project-assigner
+  template:
+    metadata:
+      labels:
+        app: project-assigner
+    spec:
+      containers:
+        - name: web
+          image: project-assigner:k8s
+          # The image was loaded into minikube by hand, so never go to a
+          # registry looking for it. Without this line a :latest tag would be
+          # re-pulled and the Pod would sit in ImagePullBackOff.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: postgres://assigner:assigner@db:5432/assigner
+            - name: REDIS_URL
+              value: redis://cache:6379
+          readinessProbe:
+            # Until this passes the Pod is kept out of the Service's endpoint
+            # list, so nobody is sent to a replica that cannot reach Postgres.
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

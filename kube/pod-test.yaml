@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-test
+  labels:
+    app: pod-test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: busybox:1.35
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c"]
+      args:
+        - sleep 3600

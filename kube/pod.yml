@@ -1,0 +1,28 @@
+# A bare Pod, for contrast only - this is NOT how you would run the app.
+# Delete it and nothing brings it back; there is no Deployment watching it.
+# Run 03-deployment.yml, delete one of its Pods, and compare.
+#
+#   kubectl apply -f pod.yml
+#   kubectl delete pod project-assigner-bare    # gone for good
+#
+# The label is deliberately NOT app=project-assigner, so the Service in
+# 04-service.yml does not pick this Pod up and quietly make it a fourth
+# backend during the demo.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: project-assigner-bare
+  labels:
+    app: project-assigner-bare
+spec:
+  containers:
+    - name: web
+      image: project-assigner:k8s
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 8080
+      env:
+        - name: DATABASE_URL
+          value: postgres://assigner:assigner@db:5432/assigner
+        - name: REDIS_URL
+          value: redis://cache:6379

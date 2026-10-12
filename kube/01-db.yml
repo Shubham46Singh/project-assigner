@@ -1,0 +1,63 @@
+# Postgres. One replica, and the data lives in an emptyDir - when this Pod
+# dies the database is empty again. That is fine for a classroom; real
+# databases need a PersistentVolumeClaim, which is a later topic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              value: assigner
+            - name: POSTGRES_PASSWORD
+              value: assigner
+            - name: POSTGRES_DB
+              value: assigner
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            # The postgres image runs every .sql it finds here, in filename
+            # order, the first time it starts. That is why there is no
+            # separate "migrate" step like the one in docker-compose.yml.
+            - name: migrations
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "assigner", "-d", "assigner"]
+            periodSeconds: 3
+      volumes:
+        - name: migrations
+          configMap:
+            name: assigner-migrations
+        - name: pgdata
+          emptyDir: {}
+---
+# Called "db" on purpose: the app's DATABASE_URL then reads
+# postgres://assigner:assigner@db:5432/assigner - character for character the
+# same string that docker-compose.yml uses.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+spec:
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      targetPort: 5432
